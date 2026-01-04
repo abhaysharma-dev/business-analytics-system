@@ -49,12 +49,11 @@ This modular design improves maintainability, scalability, and production readin
 
 This project uses OpenAI Whisper for audio transcription, which requires **FFmpeg** to be installed on the system.
 
-Install FFmpeg
-for Windows:
-Download FFmpeg from: https://ffmpeg.org/download.html
-Extract the files
-Add the bin folder to System PATH
-Restart terminal
+- Install FFmpeg for Windows:
+- Download FFmpeg from: https://ffmpeg.org/download.html
+- Extract the files
+- Add the bin folder to System PATH
+- Restart terminal
 
 Notes:-
 

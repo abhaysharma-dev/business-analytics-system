@@ -1,0 +1,17 @@
+pydub
+ffmpeg-python
+streamlit
+pandas
+numpy
+scikit-learn
+transformers
+torch
+plotly
+python-dateutil
+openai-whisper
+vosk
+spacy==3.7.4
+joblib 
+mysql-connector-python
+python-dotenv
+pydantic==1.10.13

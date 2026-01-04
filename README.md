@@ -58,9 +58,9 @@ Restart terminal
 
 Notes:-
 
-Actual datasets and audio recordings are not included due to privacy.
-Models are generated at runtime.
-FFmpeg is required for audio transcription.
+- Actual datasets and audio recordings are not included due to privacy.
+- Models are generated at runtime.
+- FFmpeg is required for audio transcription.
 
 ### Check if FFmpeg is installed
 ```bash

@@ -1,0 +1,20 @@
+# Virtual environments
+projectEnv/
+venv/
+myenv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Data / uploads
+data/
+uploads/
+
+ffmpeg/
+# Environment & secrets
+.env
+
+# Git
+.git
+.gitignore

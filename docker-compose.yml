@@ -1,0 +1,42 @@
+services:
+  api:
+    build: 
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - 8000:8000
+    container_name: api_container
+    image: abhaysharmadev/business_analytics_api:latest
+  frontend:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 8501:8501
+    container_name: frontend 
+    image: abhaysharmadev/business_analytics_frontend:latest
+    depends_on:
+      - api
+      - mysql
+    environment:
+        DB_HOST: mysql
+        DB_USER: root
+        DB_PASSWORD: abhay
+        DB_NAME: banalytics
+
+  mysql:
+      image: mysql:8
+      container_name: mysql
+      environment:
+        DB_HOST: mysql
+        DB_USER: root
+        MYSQL_ROOT_PASSWORD: abhay
+        MYSQL_DATABASE: banalytics
+      ports:
+        - "3307:3306"
+      volumes:
+        - mysql_data:/var/lib/mysql 
+        - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+volumes:
+  mysql_data:  

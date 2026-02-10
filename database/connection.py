@@ -38,42 +38,35 @@ def ensure_tables_exist():
     # transcripts
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transcripts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        call_id VARCHAR(255),
+        call_id VARCHAR(255) PRIMARY KEY,
         transcript LONGTEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY(call_id)
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
     # live_predictions
     cur.execute("""
     CREATE TABLE IF NOT EXISTS live_predictions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        call_id VARCHAR(255),
+        call_id VARCHAR(255) PRIMARY KEY,
         transcript LONGTEXT,
         prediction VARCHAR(50),
-        score FLOAT,
+        confidence FLOAT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
     # call_logs (merged)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS call_logs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        call_id VARCHAR(255),
+    CREATE TABLE IF NOT EXISTS merged_sentiment_logs (
+        call_id VARCHAR(255) PRIMARY KEY,
         student_name VARCHAR(255),
-        year VARCHAR(50),
         tech_stack VARCHAR(255),
         location VARCHAR(255),
         remarks LONGTEXT,
         transcript_text LONGTEXT,
-        combined_text LONGTEXT,
         cleaned_text LONGTEXT,
         label VARCHAR(50),
         sentiment VARCHAR(50),
-        sentiment_score FLOAT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE KEY(call_id)
+        confidence FLOAT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     """)
     cur.close()
@@ -104,72 +97,69 @@ def save_transcript_to_db(call_id: str, transcript_text: str):
 def save_live_prediction_db(call_id: str, transcript_text: str, prediction: str, score: float):
     conn = connect_db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO live_predictions (call_id, transcript, prediction, score) VALUES (%s,%s,%s,%s)", (call_id, transcript_text, prediction, score))
+    cur.execute("INSERT INTO live_predictions (call_id, transcript, prediction, confidence) VALUES (%s,%s,%s,%s) ON DUPLICATE KEY UPDATE transcript=%s, prediction = %s,confidence = %s,created_at=CURRENT_TIMESTAMP", (call_id, transcript_text, prediction, score,transcript_text,prediction,score)
+                
+                )
     conn.commit()
     cur.close()
     conn.close()
 
-def upsert_call_log(row: dict):
+def save_merged_sentiment_row(row: dict):
   
     conn = connect_db()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO call_logs
-        (call_id, student_name, year, tech_stack, location, remarks, transcript_text, combined_text, cleaned_text, label, sentiment, sentiment_score)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        INSERT INTO merged_sentiment_logs
+        (call_id, student_name, tech_stack, location, remarks, transcript_text,  cleaned_text, label, sentiment, confidence)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON DUPLICATE KEY UPDATE
             student_name=VALUES(student_name),
-            year=VALUES(year),
             tech_stack=VALUES(tech_stack),
             location=VALUES(location),
             remarks=VALUES(remarks),
             transcript_text=VALUES(transcript_text),
-            combined_text=VALUES(combined_text),
             cleaned_text=VALUES(cleaned_text),
             label=VALUES(label),
             sentiment=VALUES(sentiment),
-            sentiment_score=VALUES(sentiment_score),
+            confidence=VALUES(confidence),
             created_at=CURRENT_TIMESTAMP
     """, (
         row.get("call_id"),
         row.get("student_name"),
-        row.get("year"),
         row.get("tech_stack"),
         row.get("location"),
         row.get("remarks"),
         row.get("transcript_text"),
-        row.get("combined_text"),
         row.get("cleaned_text"),
         row.get("label"),
         row.get("sentiment"),
-        row.get("sentiment_score")
+        row.get("confidence")
     ))
     conn.commit()
     cur.close()
     conn.close()
 
-def save_merged_sentiment_row(row):
-    conn = connect_db()
-    cur = conn.cursor()
-    sql = """INSERT INTO merged_sentiment_logs
-        (call_id, student_name, year, tech_stack, location, remarks, label, transcript_text, cleaned_text, sentiment, sentiment_score)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
-    cur.execute(sql, (
-        row.get("call_id"),
-        row.get("student_name"),
-        row.get("year"),
-        row.get("tech_stack"),
-        row.get("location"),
-        row.get("remarks"),
-        row.get("label"),
-        row.get("transcript_text"),
-        row.get("cleaned_text"),
-        row.get("sentiment"),
-        row.get("sentiment_score"),
-    ))
-    conn.commit()
-    cur.close()
-    conn.close()
+# def save_merged_sentiment_row(row):
+#     conn = connect_db()
+#     cur = conn.cursor()
+#     sql = """INSERT INTO merged_sentiment_logs
+#         (call_id, student_name, tech_stack, location, remarks, label, transcript_text, cleaned_text, sentiment, confidence)
+#         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+#     cur.execute(sql, (
+#         row.get("call_id"),
+#         row.get("student_name"),
+#         row.get("tech_stack"),
+#         row.get("location"),
+#         row.get("remarks"),
+#         row.get("label"),
+#         row.get("transcript_text"),
+#         row.get("cleaned_text"),
+#         row.get("sentiment"),
+#         row.get("confidence"),
+#     ))
+#     conn.commit()
+#     cur.close()
+#     conn.close()
 
 def get_all_transcripts_from_db():
     conn = connect_db()

@@ -7,16 +7,15 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import torch
 from nlp.hf_model import load_hf_pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
 from config.settings import VECTORIZER_PATH, MODEL_PATH
+from models.loader import load_model
 from database.connection import (
     ensure_tables_exist,
     get_transcript_from_db,
     save_transcript_to_db,
     save_live_prediction_db,
-    upsert_call_log,
     save_merged_sentiment_row,
     get_all_transcripts_from_db,
 )
@@ -30,7 +29,7 @@ from asr.whisper_asr import load_whisper, transcribe_with_whisper
 # HuggingFace
 from transformers import pipeline
 import joblib
-
+import requests
 # ===============================
 # STREAMLIT CONFIG
 # ===============================
@@ -38,6 +37,8 @@ st.set_page_config(page_title="Business Analytics System", layout="wide")
 st.title("Business Analytics System")
 st.caption("Audio → Transcripts → Sentiment → DB → Analytics")
 
+# predict endpoint 
+predict_url = "http://api:8000/predict"
 # ===============================
 # DB INIT
 # ===============================
@@ -52,12 +53,7 @@ except Exception as e:
 # ===============================
 @st.cache_resource(show_spinner=False)
 def load_saved_model():
-    if os.path.exists(VECTORIZER_PATH) and os.path.exists(MODEL_PATH):
-        try:
-            return joblib.load(VECTORIZER_PATH), joblib.load(MODEL_PATH)
-        except:
-            return None
-    return None
+    return load_model()
 
 def save_model(vectorizer, clf):
     joblib.dump(vectorizer, VECTORIZER_PATH)
@@ -207,16 +203,17 @@ if csv_file is not None:
     
     # Save merged rows into call_logs table
     for _, row in merged.iterrows():
-        upsert_call_log({
+        save_merged_sentiment_row({
             "call_id": row.get("call_id"),
             "student_name": row.get("student_name"),
             "tech_stack": row.get("tech_stack"),
             "location": row.get("location"),
             "remarks": row.get("remarks"),
             "transcript_text": row.get("transcript_text"),
-            "combined_text": row.get("combined_text"),
             "cleaned_text": row.get("cleaned_text"),
             "label": row.get("label"),
+            "sentiment":None,
+            "confidence":None
         })
 
         # Show merged results (only rows with transcript or show all if none)
@@ -240,6 +237,7 @@ if csv_file is not None:
         st.write(
             f"Showing {len(df_display)} merged row(s) that have a transcript (including cleaned text):"
         )
+        df_display = df_display.drop_duplicates(subset=['call_id'], keep='last')
         st.dataframe(
             df_display[visible_cols(df_display)].head(50),
             width="stretch",
@@ -318,7 +316,7 @@ if merged is not None and len(merged) > 0:
                     scores.append(0.0)
 
         merged["sentiment"] = preds
-        merged["sentiment_score"] = scores
+        merged["confidence"] = scores
         model_used = "huggingface"
 
     # 2️⃣ Custom TF-IDF model
@@ -330,7 +328,7 @@ if merged is not None and len(merged) > 0:
         probas = clf.predict_proba(X)
 
         merged["sentiment"] = clf.predict(X)
-        merged["sentiment_score"] = probas.max(axis=1)
+        merged["confidence"] = probas.max(axis=1)
         model_used = "custom_tf_idf"
 
     # 3️⃣ Fallback HF
@@ -357,7 +355,7 @@ if merged is not None and len(merged) > 0:
                 scores.append(0.0)
 
         merged["sentiment"] = preds
-        merged["sentiment_score"] = scores
+        merged["confidence"] = scores
         model_used = "huggingface_fallback"
 
     st.success(f"Sentiment applied using: {model_used}")
@@ -365,19 +363,18 @@ if merged is not None and len(merged) > 0:
     # Save sentiment back to DB
     # -----------------------------
     for _, r in merged.iterrows():
-        upsert_call_log({
+        save_merged_sentiment_row({
             "call_id": r.get("call_id"),
             "student_name": r.get("student_name"),
             "tech_stack": r.get("tech_stack"),
             "location": r.get("location"),
             "remarks": r.get("remarks"),
             "transcript_text": r.get("transcript_text"),
-            "combined_text": r.get("combined_text"),
             "cleaned_text": r.get("cleaned_text"),
             "label": r.get("label"),
             "sentiment": r.get("sentiment"),
-            "sentiment_score": float(r.get("sentiment_score"))
-                    if r.get("sentiment_score") is not None else None
+            "confidence": float(r.get("confidence"))
+                    if r.get("confidence") is not None else None
         })
     for _, r in merged.iterrows():
         try:
@@ -545,12 +542,24 @@ if st.session_state.get("model_trained") and st.session_state.get("csv_loaded"):
                             score = float(r.get("score", 0))
                             model_used = "huggingface"
                         else:
-                            prediction, score = predict_sentiment(vectorizer, clf, raw_transcript)
+                            prediction = None
+                            score = None
+                            try:
+                                response = requests.post(predict_url,json = {"transcript":raw_transcript})  
+
+                                if response.status_code == 200:
+                                    res = response.json() 
+                                    prediction = res["prediction"].get("sentiment")
+                                    score= res["prediction"].get("confidence")
+                                else:
+                                    st.error(f"{response.status_code}=> {response.text}")
+                            except Exception as e:
+                                st.error("Could not connect with Fastapi Server")
                             model_used = "custom_tf_idf"
 
                     # ---------- SAVE TO DB + UPDATE MERGED ----------
                     save_live_prediction_db(cid, raw_transcript, prediction, score)
-
+                    save_transcript_to_db(cid,raw_transcript) 
                     final_name = st.session_state[name_key].strip() or None
                     final_loc = st.session_state[loc_key].strip() or None
                     final_stack = st.session_state[stack_key].strip() or None
@@ -565,13 +574,13 @@ if st.session_state.get("model_trained") and st.session_state.get("csv_loaded"):
                         "cleaned_text": " ".join(spacy_lemmatizer_tokenizer(raw_transcript)),
                         "label": None,
                         "sentiment": prediction,
-                        "sentiment_score": float(score) if score is not None else None,
+                        "confidence": float(score) if score is not None else None,
                     }
                     # store live row for this session's analytics
                     st.session_state["live_rows"].append(row_for_log)
 
                     try:
-                        upsert_call_log(row_for_log)
+                        save_merged_sentiment_row(row_for_log)
                     except Exception as e:
                         st.warning(f"Could not upsert live call_log for {cid}: {e}")
 

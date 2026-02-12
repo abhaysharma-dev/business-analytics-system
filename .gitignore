@@ -26,9 +26,6 @@ data/mp3/
 *.m4a
 *.aac
 
-# Models
-*.pkl
-
 # OS
 .DS_Store
 Thumbs.db

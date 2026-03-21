@@ -19,7 +19,7 @@ services:
       - api
       - mysql
     environment:
-        DB_HOST: mysql
+        DB_HOST: localhost
         DB_USER: root
         DB_PASSWORD: abhay
         DB_NAME: banalytics

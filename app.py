@@ -38,7 +38,7 @@ st.title("Business Analytics System")
 st.caption("Audio → Transcripts → Sentiment → DB → Analytics")
 
 # predict endpoint 
-predict_url = "http://api:8000/predict"
+predict_url = "http://localhost:8000/predict"
 # ===============================
 # DB INIT
 # ===============================
@@ -255,23 +255,22 @@ if can_train:
 
     train_data = merged[merged["label"].notna()]
 
-    st.write("### Step 1: Evaluate Model (Cross-Validation)")
     if st.sidebar.button("Run Cross-Validation"):
+        st.write("### Evaluate Model (Cross-Validation)")
+
         cv_summary = get_cv_report(
             train_data["combined_text"],
             train_data["label"],
-            cv=6,   
+            cv=5,   
         )
 
         st.success("Cross-validation complete (5 folds).")
-        st.caption("Scores are mean ± std across folds. Higher is better.")
         st.dataframe(
             cv_summary.style.format("{:.3f}"),
             width="stretch"
 
         )
 
-    st.write("### Step 2: Train Final Model")
     if st.sidebar.button("Train Final Model for Prediction"):
         vectorizer, clf = train_final_model(
             train_data["combined_text"],
@@ -289,7 +288,7 @@ else:
 # ===============================
 if merged is not None and len(merged) > 0:
 
-    st.subheader("Apply Sentiment & Analyze")
+    st.subheader("Sentiment & Analyze")
 
     # 1️⃣ Force HuggingFace
     if use_hf:
@@ -307,8 +306,6 @@ if merged is not None and len(merged) > 0:
                         preds.append("positive")
                     elif label == "negative":
                         preds.append("negative")
-                    else:
-                        preds.append("neutral")
 
                     scores.append(float(r.get("score", 0)))
                 except:
@@ -321,7 +318,7 @@ if merged is not None and len(merged) > 0:
 
     # 2️⃣ Custom TF-IDF model
     elif st.session_state.get("model_trained"):
-        st.success("Using custom TF-IDF model.")
+        # st.success("Using custom TF-IDF model.")
         vectorizer, clf = st.session_state["sentiment_model"]
 
         X = vectorizer.transform(merged["combined_text"])
@@ -430,20 +427,46 @@ if merged is not None and len(merged) > 0:
 
     with colC:
         if "tech_stack" in merged.columns:
-            fig3 = px.bar(merged.fillna({"tech_stack":"Unknown"}), x="tech_stack", color="sentiment", title="Sentiment by Tech Stack")
+            df_grouped = (
+                    merged
+                    .fillna({"tech_stack": "Unknown"})
+                    .groupby(["tech_stack", "sentiment"])
+                    .size()
+                    .reset_index(name="count")
+                )
+            # fig3 = px.bar(merged.fillna({"tech_stack":"Unknown"}), x="tech_stack", color="sentiment", title="Sentiment by Tech Stack")
+            fig3 = px.bar(
+                df_grouped,
+                x="tech_stack",
+                y="count",
+                color="sentiment",
+                barmode="stack",
+                title="Sentiment by Tech Stack"
+            )
+
+            fig3.update_traces(
+                hovertemplate=
+                "Tech Stack: %{x}<br>" +
+                "Count: %{y}<extra></extra>"
+            )
+            # fig3.update_traces(texttemplate='%{y}', textposition='inside')
             st.plotly_chart(fig3, width="stretch")
 
-    # Top Negative Keywords 
-    st.markdown("### Top Negative Keywords")
+    # Top TF-IDF Weighted Terms in Negative Sentiment Transcripts
+    st.markdown("### Top TF-IDF Weighted Terms in Negative Sentiment Transcripts")
     neg_text_series = merged[merged["sentiment"] == "negative"]["combined_text"].dropna()
     if len(neg_text_series) >= 3:
         try:
-            vec_keywords = TfidfVectorizer(ngram_range=(1, 2),tokenizer=spacy_lemmatizer_tokenizer, max_features=50)
+            custom_stopwords = [
+                    "yes","hello","thanks","thank","okay","ok","hi",
+                    "sir","madam","please","yeah","hmm","bye"
+                ]
+            vec_keywords = TfidfVectorizer(ngram_range=(1, 2),tokenizer=spacy_lemmatizer_tokenizer,stop_words=custom_stopwords  , max_features=50)
             X_keywords = vec_keywords.fit_transform(neg_text_series)
             sums = np.asarray(X_keywords.sum(axis=0)).ravel()
             vocab = np.array(vec_keywords.get_feature_names_out())
             kw_df = pd.DataFrame({"keyword": vocab, "score": sums}).sort_values("score", ascending=False).head(20)
-            fig5 = px.bar(kw_df, x="keyword", y="score", title="Top Negative Keywords (TF-IDF)")
+            fig5 = px.bar(kw_df, x="keyword", y="score")
             st.plotly_chart(fig5,width="stretch")
         except Exception as e:
             st.error(f"Could not generate keywords: {e}")
@@ -630,7 +653,6 @@ if merged is not None:
 # EXPORT
 # ===============================
 if merged is not None and save_intermediate:
-    st.subheader("Export Processed CSV")
     buf = io.StringIO()
     merged.to_csv(buf, index=False)
     st.sidebar.download_button(
